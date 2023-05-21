@@ -4,91 +4,114 @@ this will be the main folder for league stuff
 from os import environ
 from dotenv import load_dotenv
 import pandas as pd
-from riotwatcher import LolWatcher
+import requests
 
-load_dotenv()
-RIOT_API = environ["RIOT_API"]
-lol_watcher = LolWatcher(RIOT_API)
-my_region = "na1"
-NA = "na1"
+load_dotenv("env")
+
+API_KEY = environ["RIOT_API"]
+
+
+class Region:
+    """
+    Returns the region. Nothing Fancy.
+    """
+
+    def __init__(self) -> str:
+        self.na = "na1"
+        self.br = "br1"
+        self.eun = "eun1"
+        self.euw = "euw1"
+        self.jp = "jp1"
+        self.kr = "kr"
+        self.la1 = "la1"
+        self.la2 = "la2"
+        self.oc = "oc1"
+        self.ph = "ph2"
+        self.ru = "ru"
+        self.sg = "sg2"
+        self.th = "th2"
+        self.tr = "tr1"
+        self.tw = "tw2"
+        self.vn = "vn2"
+
+
+class Summoner:
+    """
+    Returns summoner level data.
+    """
+
+    def __init__(self, region, summoner_name):
+        self.data = self.get_data(region, summoner_name)
+        self.id = self.data.id[0]
+        self.account_id = self.data.accountId[0]
+        self.puuid = self.data.puuid[0]
+        self.name = self.data.name[0]
+        self.profile_icon_id = self.data.profileIconId[0]
+        self.revision_date = self.data.revisionDate[0]
+        self.summoner_level = self.data.summonerLevel[0]
+        self.masteries = self.get_mastery_data(region, self.id)
+
+    def get_data(self, region, summoner_name):
+        """
+        Get the summoner data.
+        https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-name/{summoner_name}
+        """
+        summoner_url = (
+            f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-name/{summoner_name}"
+            + "?api_key="
+            + API_KEY
+        )
+        req = requests.get(summoner_url, timeout=60)
+        data = pd.json_normalize(req.json())
+
+        return data
+
+    def get_mastery_data(self, region, id):
+        """
+        Get the summoner's mastery data.
+        https://{region}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-summoner/{id}
+        """
+        mastery_url = (
+            f"https://{region}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-summoner/{id}"
+            + "?api_key="
+            + API_KEY
+        )
+        req = requests.get(mastery_url, timeout=60)
+        data = pd.DataFrame.from_dict(req.json())
+
+        return data
 
 
 class League:
-    def __init__(self, region) -> None:
-        self.versions = self.Versions(region)
-        self.champions = self.get_champions(region)
+    """
+    Data dragon data.
+    """
 
-    class Versions:
-        def __init__(self, region) -> None:
-            self.versions_ = lol_watcher.data_dragon.versions_for_region(region)
-            self.versions_item = self.versions_["n"]["item"]
-            self.versions_rune = self.versions_["n"]["rune"]
-            self.versions_mastery = self.versions_["n"]["mastery"]
-            self.versions_summoner = self.versions_["n"]["summoner"]
-            self.versions_champion = self.versions_["n"]["champion"]
+    def __init__(self):
+        self.champions = self.get_champions()
 
-    def get_champions(self, region):
-        champions = (
-            pd.DataFrame.from_dict(
-                lol_watcher.data_dragon.champions(
-                    self.Versions(region).versions_champion
-                )
-            )
-            .reset_index()
-            .rename(columns={"index": "champion"})
+    def get_champions(self):
+        """
+        Get this patch's champions.
+        http://ddragon.leagueoflegends.com/cdn/13.10.1/data/en_US/champion.json
+        """
+        champions_url = (
+            "http://ddragon.leagueoflegends.com/cdn/13.10.1/data/en_US/champion.json"
+        )
+        req = requests.get(champions_url, timeout=60).json()
+        data = pd.DataFrame(req["data"]).T.reset_index()
+        data = pd.concat(
+            [data, pd.json_normalize(data.stats), pd.json_normalize(data["info"])],
+            axis=1,
+        )
+        data = data.drop(
+            [
+                "index",
+                "info",
+                "image",
+                "stats",
+            ],
+            axis=1,
         )
 
-        champions = (
-            pd.concat([champions, pd.json_normalize(champions.data)], axis=1)
-            .drop(columns=["type", "format", "version", "data", "name", "id"])
-            .rename(
-                {
-                    "key": "champion_id",
-                    "tags": "roles",
-                    "partype": "resource",
-                    # info
-                    "info.attack": "attack",
-                    "info.defense": "defense",
-                    "info.magic": "magic",
-                    "info.difficulty": "difficulty",
-                    # stats
-                    # hp
-                    "stats.hp": "hp",
-                    "stats.hpperlevel": "hp_level",
-                    "stats.hpregen": "hp_regen",
-                    "stats.hpregenperlevel": "hpregen_level",
-                    # mp
-                    "stats.mp": "mp",
-                    "stats.mpperlevel": "mp_level",
-                    "stats.mpregen": "mp_regen",
-                    "stats.mpregenperlevel": "mpregen_level",
-                    # ad
-                    "stats.attackdamage": "attack",
-                    "stats.attackdamageperlevel": "attack_level",
-                    # crit
-                    "stats.crit": "crit",
-                    "stats.critperlevel": "crit_level",
-                    # armour
-                    "stats.armor": "armor",
-                    "stats.armorperlevel": "armor_level",
-                    # attack speed
-                    "stats.attackspeed": "atk_spd",
-                    "stats.attackspeedperlevel": "atk_spd_level",
-                    # ms
-                    "stats.movespeed": "move_spd",
-                    # attack range
-                    "stats.attackrange": "atk_range",
-                    # spellblock
-                    "stats.spellblock": "spellblock",
-                    "stats.spellblockperlevel": "spellblock_level",
-                },
-                axis=1,
-            )
-        )
-
-        champions.insert(0, "champion_id", champions.pop("champion_id"))
-
-        # change datatype
-        champions.resource = champions.resource.astype("category")
-
-        return champions
+        return data
