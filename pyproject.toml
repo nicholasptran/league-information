@@ -18,6 +18,8 @@ tensorflow = "^2.12.0"
 scikit-learn = "^1.2.2"
 plotnine = "^0.10.1"
 plotly = "^5.14.1"
+requests = "^2.30.0"
+polars = "^0.17.14"
 
 
 [tool.poetry.group.dev.dependencies]
